@@ -1,0 +1,278 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local TweenService = game:GetService("TweenService")
+
+local masterEnabled = true
+local espEnabled = false
+local autoBatEnabled = false
+local autoStealEnabled = false
+local infJumpEnabled = false
+local antiRagdollEnabled = false
+
+local settings = {
+    esp = {
+        color = Color3.new(1, 0, 0),
+        textSize = 14,
+        boxTransparency = 0.5
+    },
+    bat = {
+        hitInterval = 1.5,
+        range = 50
+    },
+    steal = {
+        range = 15,
+        brainrotOnly = false,
+        pickUpDelay = 0.1
+    },
+    jump = {
+        jumpPower = 100,
+        enableDoubleJump = false
+    },
+    antiRagdoll = {
+        forceStand = true,
+        blockFalling = true
+    }
+}
+
+-- Simple ESP drawing with BillboardGui
+local espObjects = {}
+
+local function CreateESP(plr)
+    if plr == LocalPlayer or espObjects[plr] then return end
+    local char = plr.Character
+    if not char then return end
+    local head = char:FindFirstChild("Head")
+    if not head then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP"
+    billboard.Adornee = head
+    billboard.Size = UDim2.new(0, 100, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 1.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = head
+
+    local label = Instance.new("TextLabel", billboard)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = settings.esp.color
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSansBold
+    label.Text = plr.Name
+
+    espObjects[plr] = billboard
+end
+
+local function RemoveESP(plr)
+    if espObjects[plr] then
+        espObjects[plr]:Destroy()
+        espObjects[plr] = nil
+    end
+end
+
+local function UpdateESP()
+    for plr, gui in pairs(espObjects) do
+        if not plr.Character or not plr.Character:FindFirstChild("Head") or not masterEnabled or not espEnabled then
+            RemoveESP(plr)
+        end
+    end
+    if not masterEnabled or not espEnabled then return end
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then CreateESP(plr) end
+    end
+end
+
+-- Auto Bat tool finder and usage
+local batTool = nil
+local batEquipped = false
+local lastBatHit = 0
+
+local function FindBat()
+    local backpack = LocalPlayer.Backpack
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and (tool.Name:lower():find("bat") or tool.Name:lower():find("baseball")) then
+            return tool
+        end
+    end
+    local char = LocalPlayer.Character
+    if char then
+        for _, tool in ipairs(char:GetChildren()) do
+            if tool:IsA("Tool") and (tool.Name:lower():find("bat") or tool.Name:lower():find("baseball")) then
+                return tool
+            end
+        end
+    end
+    return nil
+end
+
+local function EquipBat()
+    if batEquipped then return end
+    local tool = FindBat()
+    if tool and tool.Parent == LocalPlayer.Backpack then
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:EquipTool(tool)
+            batTool = tool
+            batEquipped = true
+        end
+    end
+end
+
+local function AutoBat()
+    if not masterEnabled or not autoBatEnabled then return end
+    EquipBat()
+    if not batTool or not batEquipped or not LocalPlayer.Character then return end
+
+    local humRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not humRoot then return end
+
+    local target = nil
+    local minDist = settings.bat.range
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChildOfClass("Humanoid") then
+            local dist = (plr.Character.HumanoidRootPart.Position - humRoot.Position).Magnitude
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if dist < minDist and hum and hum.Health > 0 then
+                minDist = dist
+                target = plr
+            end
+        end
+    end
+
+    if target and tick() - lastBatHit > settings.bat.hitInterval then
+        lastBatHit = tick()
+        -- Use tool activation (simulate swing)
+        if batTool:FindFirstChild("Handle") then
+            batTool:Activate()
+        end
+        -- Optionally, move mouse to target's head for better hit chance (not guaranteed in Roblox)
+        Mouse.Target = target.Character.Head
+    end
+end
+
+-- Auto Steal implementation (basic)
+local function GetStealTarget()
+    if not LocalPlayer.Character then return nil end
+    local root = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Parent then
+            local name = obj.Name:lower()
+            local parentName = obj.Parent.Name:lower()
+            if settings.steal.brainrotOnly then
+                if name:find("brainrot") or parentName:find("brainrot") then
+                    if (root.Position - obj.Position).Magnitude <= settings.steal.range then
+                        return obj
+                    end
+                end
+            else
+                if name:find("brainrot") or parentName:find("brainrot") or name:find("steal") or name:find("loot") or name:find("item") then
+                    if (root.Position - obj.Position).Magnitude <= settings.steal.range then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function AutoSteal()
+    if not masterEnabled or not autoStealEnabled then return end
+    local target = GetStealTarget()
+    if target then
+        -- Try click detector
+        local clickDet = target.Parent:FindFirstChildOfClass("ClickDetector")
+        if clickDet then
+            clickDet:Click()
+        elseif target:FindFirstChildOfClass("ClickDetector") then
+            target:FindFirstChildOfClass("ClickDetector"):Click()
+        end
+    end
+end
+
+-- Infinite Jump setup
+local canDoubleJump = false
+
+UserInputService.JumpRequest:Connect(function()
+    if masterEnabled and infJumpEnabled and LocalPlayer.Character then
+        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and hum:GetState() ~= Enum.HumanoidStateType.Jumping then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            if settings.jump.enableDoubleJump and not canDoubleJump then
+                canDoubleJump = true
+                task.delay(0.2, function()
+                    canDoubleJump = false
+                end)
+            elseif canDoubleJump then
+                hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                canDoubleJump = false
+            end
+        elseif canDoubleJump then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            canDoubleJump = false
+        end
+    end
+end)
+
+-- Anti Ragdoll loop
+RunService.Heartbeat:Connect(function()
+    if not masterEnabled or not antiRagdollEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    if settings.antiRagdoll.forceStand and humanoid:GetState() == Enum.HumanoidStateType.Ragdoll then
+        humanoid:ChangeState(Enum.HumanoidStateType.Standing)
+    end
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    if settings.antiRagdoll.blockFalling then
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    end
+end)
+
+-- Periodic update loop
+RunService.Heartbeat:Connect(function()
+    if masterEnabled then
+        UpdateESP()
+        AutoBat()
+        AutoSteal()
+    end
+end)
+
+-- UI Buttons and toggles simplified (print toggles here, UI coding omitted for brevity)
+print("Press keys to toggle features:")
+print("F1 - Toggle MASTER")
+print("F2 - Toggle ESP")
+print("F3 - Toggle AutoBat")
+print("F4 - Toggle AutoSteal")
+print("F5 - Toggle InfiniteJump")
+print("F6 - Toggle AntiRagdoll")
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
+        masterEnabled = not masterEnabled
+        print("Master: " .. tostring(masterEnabled))
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        espEnabled = not espEnabled
+        print("ESP: " .. tostring(espEnabled))
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+        autoBatEnabled = not autoBatEnabled
+        print("AutoBat: " .. tostring(autoBatEnabled))
+    elseif input.KeyCode == Enum.KeyCode.F4 then
+        autoStealEnabled = not autoStealEnabled
+        print("AutoSteal: " .. tostring(autoStealEnabled))
+    elseif input.KeyCode == Enum.KeyCode.F5 then
+        infJumpEnabled = not infJumpEnabled
+        print("InfiniteJump: " .. tostring(infJumpEnabled))
+    elseif input.KeyCode == Enum.KeyCode.F6 then
+        antiRagdollEnabled = not antiRagdollEnabled
+        print("AntiRagdoll: " .. tostring(antiRagdollEnabled))
+    end
+end)

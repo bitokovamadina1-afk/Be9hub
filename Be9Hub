@@ -1,0 +1,507 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local TweenService = game:GetService("TweenService")
+
+-- Переключатели
+local masterEnabled = true
+local guiVisible = true
+
+local espEnabled = false
+local autoBatEnabled = false
+local autoStealEnabled = false
+local infJumpEnabled = false
+local antiRagdollEnabled = false
+
+local espObjects = {}
+local batTool = nil
+local batEquipped = false
+local stealProgress = 0
+local isStealing = false
+
+-- Создаем GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaMobileGUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Мини-кнопка для сворачивания
+local miniBtn = Instance.new("TextButton")
+miniBtn.Size = UDim2.new(0, 50, 0, 50)
+miniBtn.Position = UDim2.new(0.9, -60, 0.02, 0)
+miniBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+miniBtn.TextColor3 = Color3.fromRGB(255, 200, 50)
+miniBtn.Text = "Δ"
+miniBtn.TextScaled = true
+miniBtn.Font = Enum.Font.GothamBold
+miniBtn.BackgroundTransparency = 0.3
+miniBtn.BorderSizePixel = 2
+miniBtn.BorderColor3 = Color3.fromRGB(60, 60, 80)
+miniBtn.Visible = false
+miniBtn.Parent = screenGui
+
+-- Основная панель
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 260, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -130, 0.5, -200)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+mainFrame.BackgroundTransparency = 0.1
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(80, 80, 120)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+-- Заголовок
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "DELTA CONTROL"
+title.TextColor3 = Color3.fromRGB(100, 200, 255)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = mainFrame
+
+-- Сворачивание панели (кнопка -)
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, 35, 0, 35)
+minBtn.Position = UDim2.new(0.87, 0, 0.01, 0)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+minBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minBtn.Text = "─"
+minBtn.TextScaled = true
+minBtn.Font = Enum.Font.GothamBold
+minBtn.Parent = mainFrame
+
+-- Кнопка закрытия
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 35, 0, 35)
+closeBtn.Position = UDim2.new(0.95, 0, 0.01, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Text = "X"
+closeBtn.TextScaled = true
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.Parent = mainFrame
+
+-- Статусбар
+local statusBar = Instance.new("TextLabel")
+statusBar.Size = UDim2.new(0.95, 0, 0, 20)
+statusBar.Position = UDim2.new(0.025, 0, 0.1, 0)
+statusBar.BackgroundColor3 = Color3.fromRGB(30, 30, 50)
+statusBar.BackgroundTransparency = 0.5
+statusBar.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusBar.Text = "Status: READY"
+statusBar.TextScaled = true
+statusBar.Font = Enum.Font.Gotham
+statusBar.TextXAlignment = Enum.TextXAlignment.Center
+statusBar.Parent = mainFrame
+
+-- Главный переключатель MASTER
+local masterBtn = Instance.new("TextButton")
+masterBtn.Size = UDim2.new(0.95, 0, 0, 40)
+masterBtn.Position = UDim2.new(0.025, 0, 0.16, 0)
+masterBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+masterBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+masterBtn.TextScaled = true
+masterBtn.Font = Enum.Font.GothamBold
+masterBtn.Text = "MASTER: ON"
+masterBtn.Parent = mainFrame
+
+-- Функция для создания переключателей
+local function createToggleButton(text, xPos, yPos, color)
+  local btn = Instance.new("TextButton")
+  btn.Size = UDim2.new(0.45, 0, 0, 35)
+  btn.Position = UDim2.new(xPos, 0, yPos, 0)
+  btn.BackgroundColor3 = color
+  btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+  btn.TextScaled = true
+  btn.Font = Enum.Font.GothamBold
+  btn.Text = text .. ": OFF"
+  btn.Parent = mainFrame
+  return btn
+end
+
+local espBtn = createToggleButton("ESP", 0.025, 0.28, Color3.fromRGB(200, 50, 50))
+local batBtn = createToggleButton("BAT", 0.525, 0.28, Color3.fromRGB(50, 150, 200))
+local stealBtn = createToggleButton("STEAL", 0.025, 0.40, Color3.fromRGB(200, 150, 50))
+local jumpBtn = createToggleButton("JUMP", 0.525, 0.40, Color3.fromRGB(50, 200, 100))
+local ragdollBtn = createToggleButton("ANTIRAG", 0.025, 0.52, Color3.fromRGB(200, 50, 200))
+
+-- Прогресс-бар для авто-воровства
+local progressFrame = Instance.new("Frame")
+progressFrame.Size = UDim2.new(0.95, 0, 0, 12)
+progressFrame.Position = UDim2.new(0.025, 0, 0.62, 0)
+progressFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+progressFrame.BorderSizePixel = 1
+progressFrame.BorderColor3 = Color3.fromRGB(80, 80, 100)
+progressFrame.Parent = mainFrame
+
+local progressFill = Instance.new("Frame")
+progressFill.Size = UDim2.new(0, 0, 1, 0)
+progressFill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+progressFill.BorderSizePixel = 0
+progressFill.Parent = progressFrame
+
+local progressLabel = Instance.new("TextLabel")
+progressLabel.Size = UDim2.new(1, 0, 1, 0)
+progressLabel.BackgroundTransparency = 1
+progressLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+progressLabel.Text = "STEAL: 0%"
+progressLabel.TextScaled = true
+progressLabel.Font = Enum.Font.GothamBold
+progressLabel.Parent = progressFrame
+
+-- Функции для ESP
+
+local function CreateESP(plr)
+  if plr == LocalPlayer then return end
+  local char = plr.Character
+  if not char then return end
+  local head = char:FindFirstChild("Head")
+  if not head then return end
+  
+  local billboard = Instance.new("BillboardGui")
+  billboard.Adornee = head
+  billboard.Size = UDim2.new(0, 100, 0, 50)
+  billboard.StudsOffset = Vector3.new(0, 1.5, 0)
+  billboard.AlwaysOnTop = true
+  billboard.Parent = head
+  
+  local label = Instance.new("TextLabel")
+  label.Size = UDim2.new(1, 0, 1, 0)
+  label.BackgroundTransparency = 1
+  label.TextColor3 = Color3.fromRGB(255, 255, 255)
+  label.TextStrokeTransparency = 0
+  label.Font = Enum.Font.GothamBold
+  label.TextScaled = true
+  label.Text = plr.Name
+  label.Parent = billboard
+  
+  table.insert(espObjects, billboard)
+end
+
+local function UpdateESP()
+  for _, obj in pairs(espObjects) do
+    if obj and obj.Parent then
+      obj:Destroy()
+    end
+  end
+  espObjects = {}
+  if not masterEnabled or not espEnabled then return end
+  for _, plr in pairs(Players:GetPlayers()) do
+    CreateESP(plr)
+  end
+end
+
+-- Функции для авто-биты
+
+local function FindBat()
+  local backpack = LocalPlayer.Backpack
+  for _, tool in pairs(backpack:GetChildren()) do
+    if tool:IsA("Tool") and (string.find(string.lower(tool.Name), "bat") or string.find(string.lower(tool.Name), "baseball")) then
+      return tool
+    end
+  end
+  local char = LocalPlayer.Character
+  if char then
+    for _, tool in pairs(char:GetChildren()) do
+      if tool:IsA("Tool") and (string.find(string.lower(tool.Name), "bat") or string.find(string.lower(tool.Name), "baseball")) then
+        return tool
+      end
+    end
+  end
+  return nil
+end
+
+local function EquipBat()
+  if batEquipped then return end
+  local tool = FindBat()
+  if tool and tool.Parent == LocalPlayer.Backpack then
+    local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+    if humanoid then
+      humanoid:EquipTool(tool)
+      batTool = tool
+      batEquipped = true
+    end
+  end
+end
+
+local function AutoBatCycle()
+  if not masterEnabled or not autoBatEnabled then return end
+  if not batEquipped or not batTool or batTool.Parent ~= LocalPlayer.Character then
+    batEquipped = false
+    EquipBat()
+  end
+  if batTool and batTool.Parent == LocalPlayer.Character then
+    local target = nil
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+      local minDist = 50
+      for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+          local dist = (root.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+          if dist < minDist then
+            minDist = dist
+            target = plr
+          end
+        end
+      end
+    end
+    if target and target.Character then
+      local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+      if hrp then
+        -- Для работы отправляем мышь на цель (примерно)
+        Mouse.Hit = CFrame.new(hrp.Position)
+        -- Логика удара, если доступно
+        if batTool:FindFirstChild("ClickDetector") then
+          batTool.ClickDetector:Click()
+        else
+          -- Можно попробовать использовать событие Tool.Activated
+          batTool:Activate()
+        end
+      end
+    end
+  end
+end
+
+-- Функции для авто-воровства
+
+local function GetStealTarget()
+  local char = LocalPlayer.Character
+  if not char then return nil end
+  local root = char:FindFirstChild("HumanoidRootPart")
+  if not root then return nil end
+  for _, obj in pairs(workspace:GetDescendants()) do
+    if obj:IsA("BasePart") and obj.Parent then
+      local nameLow = string.lower(obj.Name)
+      local parentNameLow = string.lower(obj.Parent.Name)
+      if nameLow:find("brainrot") or parentNameLow:find("brainrot") or
+          nameLow:find("steal") or nameLow:find("loot") or nameLow:find("item") then
+        local dist = (root.Position - obj.Position).Magnitude
+        if dist < 15 then
+          return obj
+        end
+      end
+    end
+  end
+  return nil
+end
+
+local function AutoStealCycle()
+  if not masterEnabled or not autoStealEnabled then 
+    stealProgress = 0
+    progressFill.Size = UDim2.new(0,0,1,0)
+    progressLabel.Text = "STEAL: 0%"
+    isStealing = false
+    return 
+  end
+  
+  if isStealing then return end
+  
+  local target = GetStealTarget()
+  if target then
+    isStealing = true
+    local duration = 3 -- Время "воровства"
+    stealProgress = 0
+    for i = 1, 30 do
+      if not autoStealEnabled or not masterEnabled then break end
+      stealProgress = i / 30
+      progressFill.Size = UDim2.new(stealProgress, 0, 1, 0)
+      progressLabel.Text = string.format("STEAL: %d%%", math.floor(stealProgress * 100))
+      task.wait(duration / 30)
+    end
+    if stealProgress >= 1 then
+      -- Попытка взять предмет (если у объекта есть родитель)
+      if target and target.Parent then
+        local humanoidRootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+          -- Телепортируемся к объекту
+          LocalPlayer.Character.HumanoidRootPart.CFrame = target.CFrame * CFrame.new(0, 3, 0)
+          task.wait(0.1)
+          -- Удаляем или "забираем" объект (простейшая имитация)
+          target:Destroy()
+        end
+      end
+    end
+    stealProgress = 0
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressLabel.Text = "STEAL: 0%"
+    isStealing = false
+  else
+    stealProgress = 0
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressLabel.Text = "STEAL: 0%"
+  end
+end
+
+-- Бесконечный прыжок
+local function SetupInfiniteJump()
+  local char = LocalPlayer.Character
+  if not char then return end
+  local humanoid = char:FindFirstChild("Humanoid")
+  if humanoid then
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+    humanoid.JumpPower = 100
+  end
+end
+
+UserInputService.JumpRequest:Connect(function()
+  if masterEnabled and infJumpEnabled and LocalPlayer.Character then
+    local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
+    if hum and hum:GetState() ~= Enum.HumanoidStateType.Jumping then
+      hum:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+  end
+end)
+
+-- Анти-Рэгдолл (предотвращение)
+local function AntiRagdollLoop()
+  if not masterEnabled or not antiRagdollEnabled then return end
+  local char = LocalPlayer.Character
+  if not char then return end
+  local humanoid = char:FindFirstChild("Humanoid")
+  if humanoid then
+    if humanoid:GetState() == Enum.HumanoidStateType.Ragdoll then
+      humanoid:ChangeState(Enum.HumanoidStateType.Standing)
+    end
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+    humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+  end
+end
+
+-- Основные переключатели и обработчики
+
+local function SetMasterState(state)
+  masterEnabled = state
+  masterBtn.Text = "MASTER: " .. (state and "ON" or "OFF")
+  masterBtn.BackgroundColor3 = state and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 0, 0)
+  statusBar.Text = state and "Status: ACTIVE" or "Status: PAUSED"
+  statusBar.TextColor3 = state and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+end
+
+local function SetGUIVisible(visible)
+  guiVisible = visible
+  mainFrame.Visible = visible
+  miniBtn.Visible = not visible
+end
+
+-- Обработчики кнопок
+
+masterBtn.MouseButton1Click:Connect(function()
+  SetMasterState(not masterEnabled)
+end)
+
+espBtn.MouseButton1Click:Connect(function()
+  if not masterEnabled then return end
+  espEnabled = not espEnabled
+  espBtn.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+  espBtn.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 50, 50)
+  UpdateESP()
+  statusBar.Text = "ESP " .. (espEnabled and "ON" or "OFF")
+end)
+
+batBtn.MouseButton1Click:Connect(function()
+  if not masterEnabled then return end
+  autoBatEnabled = not autoBatEnabled
+  batBtn.Text = "BAT: " .. (autoBatEnabled and "ON" or "OFF")
+  batBtn.BackgroundColor3 = autoBatEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(50, 150, 200)
+  if autoBatEnabled then EquipBat() end
+end)
+
+stealBtn.MouseButton1Click:Connect(function()
+  if not masterEnabled then return end
+  autoStealEnabled = not autoStealEnabled
+  stealBtn.Text = "STEAL: " .. (autoStealEnabled and "ON" or "OFF")
+  stealBtn.BackgroundColor3 = autoStealEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 150, 50)
+  if not autoStealEnabled then
+    stealProgress = 0
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressLabel.Text = "STEAL: 0%"
+    isStealing = false
+  end
+end)
+
+jumpBtn.MouseButton1Click:Connect(function()
+  if not masterEnabled then return end
+  infJumpEnabled = not infJumpEnabled
+  jumpBtn.Text = "JUMP: " .. (infJumpEnabled and "ON" or "OFF")
+  jumpBtn.BackgroundColor3 = infJumpEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(50, 200, 100)
+  if infJumpEnabled then SetupInfiniteJump() end
+end)
+
+ragdollBtn.MouseButton1Click:Connect(function()
+  if not masterEnabled then return end
+  antiRagdollEnabled = not antiRagdollEnabled
+  ragdollBtn.Text = "ANTIRAG: " .. (antiRagdollEnabled and "ON" or "OFF")
+  ragdollBtn.BackgroundColor3 = antiRagdollEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 50, 200)
+end)
+
+minBtn.MouseButton1Click:Connect(function()
+  SetGUIVisible(false)
+end)
+
+miniBtn.MouseButton1Click:Connect(function()
+  SetGUIVisible(true)
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+  SetMasterState(false)
+  screenGui:Destroy()
+end)
+
+-- Хоткеи клавиатуры
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+  if gameProcessed then return end
+  if input.KeyCode == Enum.KeyCode.F5 then
+    SetMasterState(not masterEnabled)
+  elseif masterEnabled then
+    if input.KeyCode == Enum.KeyCode.F1 then
+      espEnabled = not espEnabled
+      espBtn.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+      espBtn.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 50, 50)
+      UpdateESP()
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+      autoBatEnabled = not autoBatEnabled
+      batBtn.Text = "BAT: " .. (autoBatEnabled and "ON" or "OFF")
+      batBtn.BackgroundColor3 = autoBatEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(50, 150, 200)
+      if autoBatEnabled then EquipBat() end
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+      autoStealEnabled = not autoStealEnabled
+      stealBtn.Text = "STEAL: " .. (autoStealEnabled and "ON" or "OFF")
+      stealBtn.BackgroundColor3 = autoStealEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 150, 50)
+    elseif input.KeyCode == Enum.KeyCode.F4 then
+      infJumpEnabled = not infJumpEnabled
+      jumpBtn.Text = "JUMP: " .. (infJumpEnabled and "ON" or "OFF")
+      jumpBtn.BackgroundColor3 = infJumpEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(50, 200, 100)
+      if infJumpEnabled then SetupInfiniteJump() end
+    elseif input.KeyCode == Enum.KeyCode.F6 then
+      antiRagdollEnabled = not antiRagdollEnabled
+      ragdollBtn.Text = "ANTIRAG: " .. (antiRagdollEnabled and "ON" or "OFF")
+      ragdollBtn.BackgroundColor3 = antiRagdollEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(200, 50, 200)
+    end
+  end
+end)
+
+-- Запускаем циклы по кадрам
+
+RunService.Heartbeat:Connect(function()
+  if masterEnabled then
+    AutoBatCycle()
+    AutoStealCycle()
+    AntiRagdollLoop()
+  end
+end)
+
+-- Инициализация
+
+SetMasterState(true)
+SetGUIVisible(true)
+print("Mobile GUI Loaded. F5=Master, F1=ESP, F2=BAT, F3=STEAL, F4=JUMP, F6=ANTIRAG")
+print("Minimize mods stay active!")
